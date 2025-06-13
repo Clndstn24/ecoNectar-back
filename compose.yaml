@@ -1,1 +1,31 @@
 services:
+  db:
+    image: postgres:15
+    container_name: eco_postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: eco_user
+      POSTGRES_PASSWORD: eco_pass
+      POSTGRES_DB: eco_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: eco_pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@eco.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    depends_on:
+      - db
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+volumes:
+  pgdata:
+  pgadmin_data:
