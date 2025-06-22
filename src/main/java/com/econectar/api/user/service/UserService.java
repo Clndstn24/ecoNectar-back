@@ -1,6 +1,6 @@
 package com.econectar.api.user.service;
 
-import com.econectar.api.user.dto.UserRegisterRequest;
+import com.econectar.api.auth.UserRegisterRequest;
 import com.econectar.api.user.model.User;
 import com.econectar.api.user.repository.UserRepository;
 import org.modelmapper.ModelMapper;

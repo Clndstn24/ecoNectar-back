@@ -1,6 +1,6 @@
 package com.econectar.api.user.controller;
 
-import com.econectar.api.user.dto.UserRegisterRequest;
+import com.econectar.api.auth.UserRegisterRequest;
 import com.econectar.api.user.model.User;
 import com.econectar.api.user.service.UserService;
 import org.springframework.http.HttpStatus;
@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@CrossOrigin(origins = "http://localhost:5173")
 @RequestMapping("/api/v1/users")
 public class UserController {
 

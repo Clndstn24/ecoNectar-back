@@ -1,14 +1,17 @@
 package com.econectar.api.user.model;
 
 import jakarta.persistence.*;
+import org.springframework.security.core.GrantedAuthority;
 
 
-public class Role {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public enum Role implements GrantedAuthority {
+    ADMIN,
+    USER,
+    SELLER,
+    CUSTOMER;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, unique = true)
-    private RoleName name;
+    @Override
+    public String getAuthority() {
+        return "ROLE" + name();
+    }
 }
