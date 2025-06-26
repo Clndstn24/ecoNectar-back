@@ -1,6 +1,7 @@
 package com.econectar.api.user;
 
 import com.econectar.api.auth.UserRegisterRequest;
+import com.econectar.api.user.dto.UserDTO;
 import com.econectar.api.user.model.User;
 import com.econectar.api.user.repository.UserRepository;
 import com.econectar.api.user.service.UserService;
@@ -9,6 +10,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.modelmapper.ModelMapper;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.UUID;
@@ -26,6 +29,9 @@ class UserServiceTest {
 
     @Mock
     private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private ModelMapper modelMapper;
 
     @InjectMocks
     private UserService userService;
@@ -77,6 +83,66 @@ class UserServiceTest {
         assertNotNull(result);
         assertEquals(uuid, result.getId());
         verify(userRepository).findById(uuid);
+    }
+
+    @Test
+    void shouldFindUserDTOByEmail() {
+        // GIVEN
+        String email = "test@example.com";
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail(email);
+        user.setFirstName("Test");
+        user.setLastName("User");
+
+        UserDTO mockDto = new UserDTO();
+        mockDto.setFirstName("Test");
+        mockDto.setLastName("User");
+
+        // Mock repository
+        when(userRepository.findByEmail(email)).thenReturn(user);
+        when(modelMapper.map(user, UserDTO.class)).thenReturn(mockDto);
+
+        // WHEN
+        UserDTO result = userService.findUserByEmail(email);
+
+        // THEN
+        assertNotNull(result);
+        assertEquals("Test", result.getFirstName());
+        assertEquals("User", result.getLastName());
+        verify(userRepository).findByEmail(email);
+        verify(modelMapper).map(user, UserDTO.class);
+    }
+
+    @Test
+    void shouldThrowExceptionWhenUserNotFound() {
+        // GIVEN
+        String email = "nonexistent@example.com";
+        when(userRepository.findByEmail(email)).thenReturn(null);
+
+        // WHEN & THEN
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            userService.findUserByEmail(email);
+        });
+
+        assertTrue(exception.getMessage().contains("Error retrieving user by email"));
+        assertTrue(exception.getCause() instanceof UsernameNotFoundException);
+        verify(userRepository).findByEmail(email);
+    }
+
+    @Test
+    void shouldWrapExceptionWhenRepositoryThrowsException() {
+        // GIVEN
+        String email = "test@example.com";
+        when(userRepository.findByEmail(email)).thenThrow(new RuntimeException("Database error"));
+
+        // WHEN & THEN
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            userService.findUserByEmail(email);
+        });
+
+        assertTrue(exception.getMessage().contains("Error retrieving user by email: " + email));
+        verify(userRepository).findByEmail(email);
     }
 
 

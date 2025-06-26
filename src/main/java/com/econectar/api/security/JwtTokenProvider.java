@@ -28,7 +28,7 @@ public class JwtTokenProvider {
     public String generate(Authentication auth) {
         Instant now = Instant.now();
         return Jwts.builder()
-                .subject(auth.getName())        // username
+                .subject(auth.getName())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(expMs)))
                 .signWith(key(), SignatureAlgorithm.HS512)

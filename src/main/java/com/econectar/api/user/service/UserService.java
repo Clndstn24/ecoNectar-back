@@ -1,6 +1,8 @@
 package com.econectar.api.user.service;
 
 import com.econectar.api.auth.UserRegisterRequest;
+import com.econectar.api.user.dto.UserDTO;
+import com.econectar.api.user.model.Role;
 import com.econectar.api.user.model.User;
 import com.econectar.api.user.repository.UserRepository;
 import org.modelmapper.ModelMapper;
@@ -15,16 +17,18 @@ import java.util.UUID;
 public class UserService implements UserDetailsService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ModelMapper modelMapper;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, ModelMapper modelMapper) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.modelMapper = modelMapper;
     }
 
     public User createUser(UserRegisterRequest user) {
-        ModelMapper modelMapper = new ModelMapper();
         User newUser = modelMapper.map(user, User.class);
         newUser.setPassword(passwordEncoder.encode(user.getPassword()));
+        newUser.setRole(Role.USER);
         return userRepository.save(newUser);
     }
 
@@ -33,8 +37,17 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
     }
 
-    public User findUserByEmail(String email) {
-        return userRepository.findByEmail(email);
+    public UserDTO findUserByEmail(String email) {
+        try {
+            User user = userRepository.findByEmail(email);
+            if (user == null) {
+                throw new UsernameNotFoundException("User not found with email: " + email);
+            }
+            return modelMapper.map(user, UserDTO.class);
+        }
+        catch (Exception e) {
+            throw new RuntimeException("Error retrieving user by email: " + email, e);
+        }
     }
 
     @Override
