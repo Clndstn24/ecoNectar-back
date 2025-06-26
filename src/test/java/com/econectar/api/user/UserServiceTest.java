@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.UUID;
 
@@ -23,6 +24,9 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private UserService userService;
 
@@ -34,7 +38,6 @@ class UserServiceTest {
         request.setPassword("securepass");
         request.setEmail("joel@mail.com");
 
-        // Simulamos que el mapper va a hacer esto (puede usarse real o mockearlo también)
         User mappedUser = new User();
         mappedUser.setFirstName("joel");
         mappedUser.setPassword("securepass");
@@ -46,18 +49,18 @@ class UserServiceTest {
         savedUser.setFirstName("joel");
         savedUser.setEmail("joel@mail.com");
 
-        // WHEN
-        // Mockito espera que se llame a save con un user que tenga los datos mapeados
+        // Mock del passwordEncoder
+        when(passwordEncoder.encode(any())).thenReturn("hashedpass");
         when(userRepository.save(any(User.class))).thenReturn(savedUser);
 
+        // WHEN
         User result = userService.createUser(request);
 
         // THEN
         assertNotNull(result);
-        assertEquals(uuid, result.getId());
         assertEquals("joel", result.getFirstName());
         assertEquals("joel@mail.com", result.getEmail());
-
+        verify(passwordEncoder).encode("securepass");
         verify(userRepository).save(any(User.class));
     }
 
@@ -67,13 +70,13 @@ class UserServiceTest {
         User user = new User();
         user.setId(uuid);
 
-        when(userRepository.findById(1L)).thenReturn(java.util.Optional.of(user));
+        when(userRepository.findById(uuid)).thenReturn(java.util.Optional.of(user));
 
-        User result = userService.findUserById(1L);
+        User result = userService.findUserById(uuid);
 
         assertNotNull(result);
         assertEquals(uuid, result.getId());
-        verify(userRepository).findById(1L);
+        verify(userRepository).findById(uuid);
     }
 
 

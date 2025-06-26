@@ -18,11 +18,8 @@ public class User implements UserDetails {
     @UuidGenerator(style = UuidGenerator.Style.AUTO)
     private UUID id;
     @Column(nullable = false)
-    @NotBlank
     private String password;
     @Column(nullable = false, unique = true)
-    @Email
-    @NotBlank
     private String email;
 
     private String firstName;
@@ -31,6 +28,7 @@ public class User implements UserDetails {
     private String address;
     private String city;
     private String postalCode;
+
     @Column(name = "role", nullable = true)
     @Enumerated(EnumType.STRING)
     private Role role;
@@ -42,7 +40,12 @@ public class User implements UserDetails {
 
     @Override
     public String getUsername() {
-        return "";
+        return email;
+    }
+
+    @Override
+    public String getPassword() {
+        return password;
     }
 
     @Override
