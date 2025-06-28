@@ -42,6 +42,7 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(unauthorized))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/api/v1/product/**").permitAll()
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtCookieFilter,

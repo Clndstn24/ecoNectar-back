@@ -1,23 +1,24 @@
 package com.econectar.api.auth;
 
-import com.econectar.api.user.model.User;
-import com.econectar.api.user.service.UserService;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import com.econectar.api.security.JwtTokenProvider;
+import com.econectar.api.shared.exception.AuthenticationException;
+import com.econectar.api.shared.exception.EmailAlreadyExistsException;
+import com.econectar.api.shared.exception.InvalidCredentialsException;
+import com.econectar.api.shared.exception.UserCreationException;
+import com.econectar.api.user.service.UserService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -38,15 +39,18 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<User> register(@RequestBody UserRegisterRequest user) {
+    public ResponseEntity<String> register(@RequestBody UserRegisterRequest user) {
         logger.info("Intento de registro para email: {}", user.getEmail());
         try {
-            User created = userService.createUser(user);
-            logger.info("Usuario registrado correctamente: {}", created.getEmail());
-            return ResponseEntity.ok(created);
+            userService.createUser(user);
+            logger.info("Usuario registrado correctamente: {}", user.getEmail());
+            return ResponseEntity.ok("User registered successfully");
+        } catch (DataIntegrityViolationException e) {
+            logger.error("Error de integración de datos al registrar usuario con email: {} - {}", user.getEmail(), e.getMessage());
+            throw new EmailAlreadyExistsException("El correo electrónico ya está en uso.", e);
         } catch (Exception e) {
             logger.error("Error en registro para email: {} - {}", user.getEmail(), e.getMessage(), e);
-            return ResponseEntity.status(400).build();
+            throw new UserCreationException("Error al registrar usuario: " + e.getMessage(), e);
         }
     }
 
@@ -66,9 +70,12 @@ public class AuthController {
             cookie.setMaxAge(3600); // 1 hora
             response.addCookie(cookie);
             return ResponseEntity.ok("Login successful");
+        } catch (BadCredentialsException e) {
+            logger.warn("Fallo de autenticación para email: {} - Credenciales inválidas", loginRequest.getEmail());
+            throw new InvalidCredentialsException("Email o contraseña incorrectos");
         } catch (Exception e) {
             logger.warn("Fallo de autenticación para email: {} - {}", loginRequest.getEmail(), e.getMessage());
-            return ResponseEntity.status(401).body("Invalid credentials");
+            throw new AuthenticationException("Error al procesar la autenticación: " + e.getMessage(), e);
         }
     }
 
@@ -76,7 +83,7 @@ public class AuthController {
     public ResponseEntity<String> logout(HttpServletResponse response) {
         Cookie cookie = new Cookie("JWT", null);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(false);
         cookie.setPath("/");
         cookie.setMaxAge(0);
         response.addCookie(cookie);

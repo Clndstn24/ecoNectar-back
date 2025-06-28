@@ -1,27 +1,32 @@
 package com.econectar.api.user;
 
 import com.econectar.api.auth.UserRegisterRequest;
+import com.econectar.api.shared.exception.EmailAlreadyExistsException;
+import com.econectar.api.shared.exception.UserCreationException;
+import com.econectar.api.shared.exception.UserNotFoundException;
 import com.econectar.api.user.dto.UserDTO;
+import com.econectar.api.user.model.Role;
 import com.econectar.api.user.model.User;
 import com.econectar.api.user.repository.UserRepository;
 import com.econectar.api.user.service.UserService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.MockitoAnnotations;
 import org.modelmapper.ModelMapper;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
     @Mock
@@ -36,114 +41,136 @@ class UserServiceTest {
     @InjectMocks
     private UserService userService;
 
+    private User testUser;
+    private UUID userId;
+    private UserRegisterRequest registerRequest;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+
+        userId = UUID.randomUUID();
+        testUser = new User();
+        testUser.setId(userId);
+        testUser.setEmail("test@example.com");
+        testUser.setPassword("encoded_password");
+        testUser.setFirstName("Test");
+        testUser.setLastName("User");
+        testUser.setRole(Role.USER);
+
+        registerRequest = new UserRegisterRequest();
+        registerRequest.setEmail("test@example.com");
+        registerRequest.setPassword("password123");
+        registerRequest.setFirstName("Test");
+        registerRequest.setLastName("User");
+
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded_password");
+        when(modelMapper.map(any(UserRegisterRequest.class), eq(User.class))).thenReturn(testUser);
+    }
+
     @Test
-    void shouldCreateUserFromRegisterRequest() {
-        // GIVEN
-        UserRegisterRequest request = new UserRegisterRequest();
-        request.setFirstName("joel");
-        request.setPassword("securepass");
-        request.setEmail("joel@mail.com");
+    @DisplayName("Crear usuario exitosamente")
+    void createUser_Success() {
+        // Arrange
+        when(userRepository.findByEmail(anyString())).thenReturn(null);
+        when(userRepository.save(any(User.class))).thenReturn(testUser);
 
-        User mappedUser = new User();
-        mappedUser.setFirstName("joel");
-        mappedUser.setPassword("securepass");
-        mappedUser.setEmail("joel@mail.com");
+        // Act
+        assertDoesNotThrow(() -> userService.createUser(registerRequest));
 
-        UUID uuid = UUID.randomUUID();
-        User savedUser = new User();
-        savedUser.setId(uuid);
-        savedUser.setFirstName("joel");
-        savedUser.setEmail("joel@mail.com");
-
-        // Mock del passwordEncoder
-        when(passwordEncoder.encode(any())).thenReturn("hashedpass");
-        when(userRepository.save(any(User.class))).thenReturn(savedUser);
-
-        // WHEN
-        User result = userService.createUser(request);
-
-        // THEN
-        assertNotNull(result);
-        assertEquals("joel", result.getFirstName());
-        assertEquals("joel@mail.com", result.getEmail());
-        verify(passwordEncoder).encode("securepass");
+        // Assert
+        verify(userRepository).findByEmail("test@example.com");
+        verify(passwordEncoder).encode("password123");
         verify(userRepository).save(any(User.class));
     }
 
     @Test
-    void shouldFindUserById() {
-        UUID uuid = UUID.randomUUID();
-        User user = new User();
-        user.setId(uuid);
+    @DisplayName("Crear usuario con email existente lanza EmailAlreadyExistsException")
+    void createUser_WithExistingEmail_ThrowsEmailAlreadyExistsException() {
+        // Arrange
+        when(userRepository.findByEmail("test@example.com")).thenReturn(testUser);
 
-        when(userRepository.findById(uuid)).thenReturn(java.util.Optional.of(user));
+        // Act & Assert
+        assertThrows(EmailAlreadyExistsException.class, () -> userService.createUser(registerRequest));
+        verify(userRepository).findByEmail("test@example.com");
+        verify(userRepository, never()).save(any(User.class));
+    }
 
-        User result = userService.findUserById(uuid);
+    @Test
+    @DisplayName("Buscar usuario por ID exitosamente")
+    void findUserById_Success() {
+        // Arrange
+        when(userRepository.findById(userId)).thenReturn(Optional.of(testUser));
 
+        // Act
+        User result = userService.findUserById(userId);
+
+        // Assert
         assertNotNull(result);
-        assertEquals(uuid, result.getId());
-        verify(userRepository).findById(uuid);
+        assertEquals(userId, result.getId());
+        assertEquals("test@example.com", result.getEmail());
     }
 
     @Test
-    void shouldFindUserDTOByEmail() {
-        // GIVEN
-        String email = "test@example.com";
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setEmail(email);
-        user.setFirstName("Test");
-        user.setLastName("User");
+    @DisplayName("Buscar usuario por ID inexistente lanza RuntimeException")
+    void findUserById_NonExistent_ThrowsRuntimeException() {
+        // Arrange
+        UUID nonExistentId = UUID.randomUUID();
+        when(userRepository.findById(nonExistentId)).thenReturn(Optional.empty());
 
-        UserDTO mockDto = new UserDTO();
-        mockDto.setFirstName("Test");
-        mockDto.setLastName("User");
+        // Act & Assert
+        assertThrows(RuntimeException.class, () -> userService.findUserById(nonExistentId));
+    }
 
-        // Mock repository
-        when(userRepository.findByEmail(email)).thenReturn(user);
-        when(modelMapper.map(user, UserDTO.class)).thenReturn(mockDto);
+    @Test
+    @DisplayName("Buscar usuario por email exitosamente")
+    void findUserByEmail_Success() {
+        // Arrange
+        when(userRepository.findByEmail("test@example.com")).thenReturn(testUser);
 
-        // WHEN
-        UserDTO result = userService.findUserByEmail(email);
+        UserDTO userDTO = new UserDTO();
+        userDTO.setEmail("test@example.com");
+        when(modelMapper.map(testUser, UserDTO.class)).thenReturn(userDTO);
 
-        // THEN
+        // Act
+        UserDTO result = userService.findUserByEmail("test@example.com");
+
+        // Assert
         assertNotNull(result);
-        assertEquals("Test", result.getFirstName());
-        assertEquals("User", result.getLastName());
-        verify(userRepository).findByEmail(email);
-        verify(modelMapper).map(user, UserDTO.class);
+        assertEquals("test@example.com", result.getEmail());
     }
 
     @Test
-    void shouldThrowExceptionWhenUserNotFound() {
-        // GIVEN
-        String email = "nonexistent@example.com";
-        when(userRepository.findByEmail(email)).thenReturn(null);
+    @DisplayName("Buscar usuario por email inexistente lanza UsernameNotFoundException")
+    void findUserByEmail_NonExistent_ThrowsUsernameNotFoundException() {
+        // Arrange
+        when(userRepository.findByEmail("nonexistent@example.com")).thenReturn(null);
 
-        // WHEN & THEN
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            userService.findUserByEmail(email);
-        });
-
-        assertTrue(exception.getMessage().contains("Error retrieving user by email"));
-        assertTrue(exception.getCause() instanceof UsernameNotFoundException);
-        verify(userRepository).findByEmail(email);
+        // Act & Assert
+        assertThrows(UserNotFoundException.class, () -> userService.findUserByEmail("nonexistent@example.com"));
     }
 
     @Test
-    void shouldWrapExceptionWhenRepositoryThrowsException() {
-        // GIVEN
-        String email = "test@example.com";
-        when(userRepository.findByEmail(email)).thenThrow(new RuntimeException("Database error"));
+    @DisplayName("LoadUserByUsername exitosamente")
+    void loadUserByUsername_Success() {
+        // Arrange
+        when(userRepository.findByEmail("test@example.com")).thenReturn(testUser);
 
-        // WHEN & THEN
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            userService.findUserByEmail(email);
-        });
+        // Act
+        User result = userService.loadUserByUsername("test@example.com");
 
-        assertTrue(exception.getMessage().contains("Error retrieving user by email: " + email));
-        verify(userRepository).findByEmail(email);
+        // Assert
+        assertNotNull(result);
+        assertEquals("test@example.com", result.getEmail());
     }
 
+    @Test
+    @DisplayName("LoadUserByUsername con email inexistente lanza UsernameNotFoundException")
+    void loadUserByUsername_NonExistent_ThrowsUsernameNotFoundException() {
+        // Arrange
+        when(userRepository.findByEmail("nonexistent@example.com")).thenReturn(null);
 
+        // Act & Assert
+        assertThrows(UsernameNotFoundException.class, () -> userService.loadUserByUsername("nonexistent@example.com"));
+    }
 }

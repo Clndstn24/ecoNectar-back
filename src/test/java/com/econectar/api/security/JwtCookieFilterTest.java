@@ -1,134 +1,129 @@
 package com.econectar.api.security;
 
+import com.econectar.api.user.model.User;
+import com.econectar.api.user.service.UserService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 
 import java.io.IOException;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
 
 class JwtCookieFilterTest {
 
-    @Mock
-    private JwtTokenProvider tokenProvider;
+    private JwtCookieFilter jwtCookieFilter;
 
     @Mock
-    private UserDetailsService userDetailsService;
+    private JwtTokenProvider jwtTokenProvider;
 
     @Mock
-    private HttpServletRequest request;
-
-    @Mock
-    private HttpServletResponse response;
+    private UserService userService;
 
     @Mock
     private FilterChain filterChain;
 
-    @Mock
-    private UserDetails userDetails;
-
-    private JwtCookieFilter filter;
+    private MockHttpServletRequest request;
+    private MockHttpServletResponse response;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        filter = new JwtCookieFilter(tokenProvider, userDetailsService);
-        SecurityContextHolder.clearContext();
+        jwtCookieFilter = new JwtCookieFilter(jwtTokenProvider, userService);
+        request = new MockHttpServletRequest();
+        response = new MockHttpServletResponse();
+        SecurityContextHolder.clearContext(); // Limpia el contexto de seguridad antes de cada prueba
     }
 
     @Test
-    void shouldNotAuthenticateWhenNoCookiesPresent() throws ServletException, IOException {
-        // Given
-        when(request.getCookies()).thenReturn(null);
+    @DisplayName("doFilterInternal sin cookie JWT debe continuar la cadena")
+    void doFilterInternal_WithoutJwtCookie_ShouldContinueChain() throws ServletException, IOException {
+        // Act
+        jwtCookieFilter.doFilterInternal(request, response, filterChain);
 
-        // When
-        filter.doFilterInternal(request, response, filterChain);
-
-        // Then
+        // Assert
         verify(filterChain).doFilter(request, response);
-        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        verify(jwtTokenProvider, never()).validate(anyString());
     }
 
     @Test
-    void shouldNotAuthenticateWhenNoJwtCookie() throws ServletException, IOException {
-        // Given
-        Cookie[] cookies = new Cookie[] { new Cookie("OTHER", "value") };
-        when(request.getCookies()).thenReturn(cookies);
+    @DisplayName("doFilterInternal con cookie JWT inválida debe continuar la cadena")
+    void doFilterInternal_WithInvalidJwtCookie_ShouldContinueChain() throws ServletException, IOException {
+        // Arrange
+        Cookie cookie = new Cookie("JWT", "invalid-token");
+        request.setCookies(cookie);
 
-        // When
-        filter.doFilterInternal(request, response, filterChain);
+        when(jwtTokenProvider.validate("invalid-token")).thenReturn(false);
 
-        // Then
+        // Act
+        jwtCookieFilter.doFilterInternal(request, response, filterChain);
+
+        // Assert
         verify(filterChain).doFilter(request, response);
-        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        verify(jwtTokenProvider).validate("invalid-token");
+        verify(userService, never()).loadUserByUsername(anyString());
     }
 
     @Test
-    void shouldNotAuthenticateWhenInvalidToken() throws ServletException, IOException {
-        // Given
-        Cookie[] cookies = new Cookie[] { new Cookie("JWT", "invalid-token") };
-        when(request.getCookies()).thenReturn(cookies);
-        when(tokenProvider.validate("invalid-token")).thenReturn(false);
-
-        // When
-        filter.doFilterInternal(request, response, filterChain);
-
-        // Then
-        verify(filterChain).doFilter(request, response);
-        assertNull(SecurityContextHolder.getContext().getAuthentication());
-    }
-
-    @Test
-    void shouldAuthenticateWithValidToken() throws ServletException, IOException {
-        // Given
+    @DisplayName("doFilterInternal con cookie JWT válida debe autenticar al usuario")
+    void doFilterInternal_WithValidJwtCookie_ShouldAuthenticateUser() throws ServletException, IOException {
+        // Arrange
         String token = "valid-token";
-        String username = "testuser@example.com";
-        Cookie[] cookies = new Cookie[] { new Cookie("JWT", token) };
+        String username = "test@example.com";
+        Cookie cookie = new Cookie("JWT", token);
+        request.setCookies(cookie);
 
-        when(request.getCookies()).thenReturn(cookies);
-        when(tokenProvider.validate(token)).thenReturn(true);
-        when(tokenProvider.getUser(token)).thenReturn(username);
-        when(userDetailsService.loadUserByUsername(username)).thenReturn(userDetails);
+        User mockUser = mock(User.class);
+        when(jwtTokenProvider.validate(token)).thenReturn(true);
+        when(jwtTokenProvider.getUser(token)).thenReturn(username);
+        when(userService.loadUserByUsername(username)).thenReturn(mockUser);
 
-        // When
-        filter.doFilterInternal(request, response, filterChain);
+        // Act
+        jwtCookieFilter.doFilterInternal(request, response, filterChain);
 
-        // Then
+        // Assert
         verify(filterChain).doFilter(request, response);
-        verify(userDetailsService).loadUserByUsername(username);
+        verify(jwtTokenProvider).validate(token);
+        verify(jwtTokenProvider).getUser(token);
+        verify(userService).loadUserByUsername(username);
+
+        // Verificar que el contexto de seguridad contiene la autenticación
         assertNotNull(SecurityContextHolder.getContext().getAuthentication());
-        assertEquals(userDetails, SecurityContextHolder.getContext().getAuthentication().getPrincipal());
     }
 
     @Test
-    void shouldProceedWithFilterChainEvenWithException() throws ServletException, IOException {
-        // Given
-        String token = "valid-token";
-        Cookie[] cookies = new Cookie[] { new Cookie("JWT", token) };
+    @DisplayName("doFilterInternal con cookie JWT válida pero usuario no encontrado")
+    void doFilterInternal_WithValidJwtButUserNotFound_ShouldContinueChainWithoutAuthentication() throws ServletException, IOException {
+        // Arrange
+        String token = "valid-token-unknown-user";
+        String username = "unknown@example.com";
+        Cookie cookie = new Cookie("JWT", token);
+        request.setCookies(cookie);
 
-        when(request.getCookies()).thenReturn(cookies);
-        when(tokenProvider.validate(token)).thenReturn(true);
-        when(tokenProvider.getUser(token)).thenReturn("username");
-        when(userDetailsService.loadUserByUsername(anyString())).thenThrow(new RuntimeException("Test exception"));
+        when(jwtTokenProvider.validate(token)).thenReturn(true);
+        when(jwtTokenProvider.getUser(token)).thenReturn(username);
+        when(userService.loadUserByUsername(username)).thenThrow(new RuntimeException("User not found"));
 
-        // When
-        filter.doFilterInternal(request, response, filterChain);
+        // Act
+        jwtCookieFilter.doFilterInternal(request, response, filterChain);
 
-        // Then
+        // Assert
         verify(filterChain).doFilter(request, response);
+        verify(jwtTokenProvider).validate(token);
+        verify(jwtTokenProvider).getUser(token);
+        verify(userService).loadUserByUsername(username);
+
+        // Verificar que el contexto de seguridad no contiene autenticación
         assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
 }

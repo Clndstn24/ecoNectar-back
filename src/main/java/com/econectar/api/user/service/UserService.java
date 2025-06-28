@@ -1,6 +1,9 @@
 package com.econectar.api.user.service;
 
 import com.econectar.api.auth.UserRegisterRequest;
+import com.econectar.api.shared.exception.EmailAlreadyExistsException;
+import com.econectar.api.shared.exception.UserCreationException;
+import com.econectar.api.shared.exception.UserNotFoundException;
 import com.econectar.api.user.dto.UserDTO;
 import com.econectar.api.user.model.Role;
 import com.econectar.api.user.model.User;
@@ -25,28 +28,44 @@ public class UserService implements UserDetailsService {
         this.modelMapper = modelMapper;
     }
 
-    public User createUser(UserRegisterRequest user) {
+    public void createUser(UserRegisterRequest userRequest) {
+        // Validar si el email ya existe
+        if (userRepository.findByEmail(userRequest.getEmail()) != null) {
+            throw new EmailAlreadyExistsException("El correo electrónico ya está registrado: " + userRequest.getEmail());
+        }
+        try {
+            User newUser = getNewUser(userRequest);
+            userRepository.save(newUser);
+        }
+        catch (Exception e) {
+            throw new UserCreationException("Error al crear usuario: " + userRequest.getEmail(), e);
+        }
+    }
+
+    private User getNewUser(UserRegisterRequest user) {
         User newUser = modelMapper.map(user, User.class);
         newUser.setPassword(passwordEncoder.encode(user.getPassword()));
-        newUser.setRole(Role.USER);
-        return userRepository.save(newUser);
+        if (newUser.getRole() == null) {
+            newUser.setRole(Role.USER); // Asignar rol USER por defecto si no se especifica
+        }
+        return newUser;
     }
 
     public User findUserById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
     }
 
     public UserDTO findUserByEmail(String email) {
         try {
             User user = userRepository.findByEmail(email);
             if (user == null) {
-                throw new UsernameNotFoundException("User not found with email: " + email);
+                throw new UserNotFoundException("User not found with email: " + email);
             }
             return modelMapper.map(user, UserDTO.class);
         }
         catch (Exception e) {
-            throw new RuntimeException("Error retrieving user by email: " + email, e);
+            throw new UserNotFoundException("Error retrieving user by email: " + email, e);
         }
     }
 
@@ -58,6 +77,4 @@ public class UserService implements UserDetailsService {
         }
         return user;
     }
-
-    // Additional methods for user management can be added here
 }
